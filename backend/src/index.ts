@@ -1,8 +1,12 @@
 import express, { Request, Response } from "express"
 import * as mediasoup from "mediasoup"
-import { Router } from "mediasoup/node/lib/RouterTypes";
+import { startSocketServer } from "./socket";
+import dotenv from "dotenv"
 
 const app = express();
+dotenv.config()
+
+process.env.DEBUG = "mediasoup:*"
 
 app.get("/", (req: Request, res: Response) => {
   res.status(200).json({ msg: "Request arrived" })
@@ -11,6 +15,7 @@ app.get("/", (req: Request, res: Response) => {
 app.listen(3000, () => {
   console.log("Listening on port 3000")
 })
+
 
 // array of codec capabalities
 const mediaCodecs: mediasoup.types.RtpCodecCapability[] = [
@@ -43,35 +48,40 @@ const mediaCodecs: mediasoup.types.RtpCodecCapability[] = [
   }
 ];
 
+type MediasoupStateType = {
+  worker: mediasoup.types.Worker | null,
+  router: mediasoup.types.Router | null,
+  transports: Map<string, mediasoup.types.WebRtcTransport>
+  producers: Map<string, mediasoup.types.ProducerOptions>
+}
+
+export const mediasoupState: MediasoupStateType = {
+  worker: null,
+  router: null,
+  transports: new Map(),
+  producers: new Map()
+}
+
 async function main() {
   try {
     // const mediasoupWorkers = [] //for multiple workers
 
     const worker = await mediasoup.createWorker({
-      logLevel: "none",
-      logTags: [],
+      logLevel: "warn",
+      logTags: ["ice", "dtls", "rtp", "rtcp", "srtp", "bwe", "score"],
       rtcMinPort: 10000, // rtcMinPort & rtcMaxPort represents the range of UDP and TCP ports used for webRTC
       rtcMaxPort: 59999
     })
 
-    // worker.on('died', () => {
-    //   console.error('mediasoup Worker died (it will be automatically reaped)');
-    //   // Handle worker death, e.g., create a new worker or exit the application
-    // });
-
-    // mediasoupWorkers.push(worker)
-    // console.log(worker.pid);
-
-
     const router = await worker.createRouter({ mediaCodecs });
-    // console.log("router", router)
-    // console.log('Mediasoup Router created:', router.id);
 
+    mediasoupState.worker = worker
+    mediasoupState.router = router
 
-    console.log("worker", worker)
   } catch (error) {
     console.log(error)
   }
 }
 
 main()
+startSocketServer()
