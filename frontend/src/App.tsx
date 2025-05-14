@@ -1,6 +1,8 @@
 import { useEffect } from "react";
 import { io } from "socket.io-client";
 import * as mediasoupClient from "mediasoup-client";
+import { BrowserRouter, Route, Routes } from "react-router-dom";
+import Receiver from "./components/Receiver";
 
 const App = () => {
   useEffect(() => {
@@ -24,13 +26,18 @@ const App = () => {
             async (
               transportOptions: mediasoupClient.types.TransportOptions
             ) => {
-              sendTransport = device.createSendTransport(transportOptions);
+              // console.log("server transport data", transportOptions);
+              sendTransport = device.createSendTransport(transportOptions); // creates a new sendtransport object containing the remote sdp
               // console.log("Client: Transport created", sendTransport);
 
               sendTransport.on("connect", ({ dtlsParameters }, callback) => {
+                // console.log("here in transport connect");
                 socket.emit("transport-connect", { dtlsParameters }, callback);
               });
 
+              // setup a listner on produce event, fires when sendTransport.produce() is called locally
+              // kind : "audio" | "video"
+              // rtpParameters : encoding/decoding params of the media
               sendTransport.on(
                 "produce",
                 ({ kind, rtpParameters }, callback) => {
@@ -63,6 +70,11 @@ const App = () => {
   return (
     <>
       <div className="bg-red-500">Video Conferencing App</div>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/receiver" element={<Receiver />} />
+        </Routes>
+      </BrowserRouter>
     </>
   );
 };

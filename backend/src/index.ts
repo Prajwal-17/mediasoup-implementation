@@ -51,15 +51,17 @@ const mediaCodecs: mediasoup.types.RtpCodecCapability[] = [
 type MediasoupStateType = {
   worker: mediasoup.types.Worker | null,
   router: mediasoup.types.Router | null,
-  transports: Map<string, mediasoup.types.WebRtcTransport>
-  producers: Map<string, mediasoup.types.ProducerOptions>
+  transports: Map<string, mediasoup.types.WebRtcTransport>,
+  producers: Map<string, mediasoup.types.Producer>,
+  consumers: Map<string, mediasoup.types.Consumer>
 }
 
 export const mediasoupState: MediasoupStateType = {
   worker: null,
   router: null,
   transports: new Map(),
-  producers: new Map()
+  producers: new Map(),
+  consumers: new Map()
 }
 
 async function main() {
