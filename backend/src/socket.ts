@@ -22,20 +22,23 @@ io.on("connection", (socket) => {
   // creating a send transport when a user connects to socket
   socket.on("createSendTransport", async (callback) => {
     const transport = await mediasoupState.router?.createWebRtcTransport({
-      listenInfos: [
+      listenIps: [
         {
-          protocol: "udp",
-          ip: "0.0.0.0"
+          ip: '192.168.38.232', // my ip (ipv4)
+          announcedIp: '192.168.38.232'
         },
         {
-          protocol: "udp",
-          ip: "::"
+          ip: "127.0.0.1", // localhost (ipv4)
+          announcedIp: "127.0.0.1"
+        }, {
+          ip: "::1", //locahost (ipv6)
+          announcedIp: "::1"
         }
       ],
-      enableTcp: true,
       enableUdp: true,
+      enableTcp: true,
       preferUdp: true
-    })
+    });
 
     if (transport) {
       mediasoupState.transports.set(socket.id, transport)
@@ -45,6 +48,8 @@ io.on("connection", (socket) => {
         iceCandidates: transport.iceCandidates,  // these are network ip addresses and ports with protocols used to connect
         dtlsParameters: transport.dtlsParameters // (Datagram Transport Layer Security) provides security and encryption for media streams
       })
+      // console.log('Transport created:', transport.id);
+
 
       // Handle dtls
       // dtls is required to establish a connection securly btw peers
@@ -78,15 +83,13 @@ io.on("connection", (socket) => {
   // creating a receive transport (for consumers)
   socket.on("createRecvTransport", async (callback) => {
     const transport = await mediasoupState.router?.createWebRtcTransport({
-      listenInfos: [
+      listenIps: [
         {
-          protocol: "udp",
-          ip: "0.0.0.0"
+          ip: '0.0.0.0',
         },
         {
-          protocol: "udp",
-          ip: "::"
-        }
+          ip: '::',
+        },
       ],
       enableTcp: true,
       enableUdp: true,

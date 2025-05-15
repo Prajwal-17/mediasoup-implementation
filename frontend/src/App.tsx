@@ -32,9 +32,12 @@ const App = () => {
             async (
               transportOptions: mediasoupClient.types.TransportOptions
             ) => {
-              // console.log("server transport data", transportOptions);
-              sendTransport = device.createSendTransport(transportOptions); // creates a new sendtransport object containing the remote sdp
-              // console.log("Client: Transport created", sendTransport);
+              console.log("server transport data", transportOptions);
+              sendTransport = device.createSendTransport({
+                ...transportOptions,
+                iceServers:[{urls:"stun:stun.l.google.com:19302"}]
+              }); // creates a new sendtransport object containing the remote sdp
+              console.log("Client: Transport created", sendTransport);
 
               sendTransport.on("connect", ({ dtlsParameters }, callback) => {
                 // console.log("here in transport connect");
