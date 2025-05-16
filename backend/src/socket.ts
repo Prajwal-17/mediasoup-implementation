@@ -1,6 +1,5 @@
 import { Server } from "socket.io";
 import { createServer } from "node:http"
-import * as mediasoup from "mediasoup"
 import { mediasoupState } from ".";
 
 const server = createServer();
@@ -11,12 +10,12 @@ const io = new Server(server, {
 })
 
 io.on("connection", (socket) => {
-  console.log("user connected to socket server")
+  console.log("User connected to socket server")
 
   // send router rtpCapabilites to client for further negotiation
+  // RTP capabilities,define what mediasoup or a consumer endpoint can receive (e.g video codecs info)
   socket.on("getRtpCapabilites", (callback) => {
     callback(mediasoupState.router?.rtpCapabilities)
-    // console.log(mediasoupState.router?.rtpCapabilities)
   })
 
   // creating a send transport when a user connects to socket
@@ -24,8 +23,8 @@ io.on("connection", (socket) => {
     const transport = await mediasoupState.router?.createWebRtcTransport({
       listenIps: [
         {
-          ip: '0.0.0.0', // my ip (ipv4)
-          announcedIp: '192.168.38.232'
+          ip: '0.0.0.0', // this is the localip that mediasoup is runnning (onserver) -> localip(sameNetwork)
+          announcedIp: '192.168.38.232' // this is the public ip that is sent to clients to connect back to server -> publicip
         },
         {
           ip: "127.0.0.1", // localhost (ipv4)
@@ -48,8 +47,6 @@ io.on("connection", (socket) => {
         iceCandidates: transport.iceCandidates,  // these are network ip addresses and ports with protocols used to connect
         dtlsParameters: transport.dtlsParameters // (Datagram Transport Layer Security) provides security and encryption for media streams
       })
-      // console.log('Transport created:', transport.id);
-
 
       // Handle dtls
       // dtls is required to establish a connection securly btw peers
@@ -59,17 +56,14 @@ io.on("connection", (socket) => {
           await transport.connect({ dtlsParameters })   // dtls is security layer for udp, .eg tls for tcp/http layer
           callback();
         } catch (error) {
-          console.log("error", error)
+          console.log("Transport connect error", error)
         }
       });
 
+      // rtpParameters => this describes the media sent by producer to mediasoup or mediasoup to consumer
       socket.on("transport-produce", async ({ kind, rtpParameters }, callback) => {
         const producer = await transport.produce({ kind, rtpParameters });
 
-        // producer.on("score", (score) => {
-        //   console.log("Media score:", score);
-        //   // If score is > 0, packets are being received
-        // });
         mediasoupState.producers.set(socket.id, producer);
         callback({ id: producer.id });
       });
@@ -84,7 +78,7 @@ io.on("connection", (socket) => {
     const transport = await mediasoupState.router?.createWebRtcTransport({
       listenIps: [
         {
-          ip: '0.0.0.0', // my ip (ipv4)
+          ip: '0.0.0.0', // listen on all available networks
           announcedIp: '192.168.38.232'
         },
         {
@@ -131,9 +125,7 @@ io.on("connection", (socket) => {
             throw new Error("No producers available");
           }
 
-          // check if the device can consume this producer
-
-          //create consumer 
+          // create consumer 
           const consumer = await transport.consume({
             producerId: producer.id,
             rtpCapabilities: rtpCapabilites,
@@ -148,15 +140,6 @@ io.on("connection", (socket) => {
             kind: consumer.kind,
             rtpParameters: consumer.rtpParameters
           });
-
-          // Handle consumer resume
-          socket.on("consume-resume", async (callback) => {
-            const consumer = mediasoupState.consumers.get(socket.id)
-            if (consumer) {
-              await consumer.resume();
-              callback();
-            }
-          })
 
         } catch (error) {
           console.log("error", error)

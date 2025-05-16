@@ -60,11 +60,6 @@ const Receiver = () => {
                     videoConsumer = consumer;
                   }
 
-                  //resume consumer
-                  socket.emit("consumer-resume", (callback: any) => {
-                    console.log(callback);
-                  });
-
                   const { track } = consumer;
                   console.log("track", track);
                   if (consumer.kind === "video" && videoRef.current) {
