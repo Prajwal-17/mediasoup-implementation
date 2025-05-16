@@ -24,7 +24,7 @@ io.on("connection", (socket) => {
     const transport = await mediasoupState.router?.createWebRtcTransport({
       listenIps: [
         {
-          ip: '192.168.38.232', // my ip (ipv4)
+          ip: '0.0.0.0', // my ip (ipv4)
           announcedIp: '192.168.38.232'
         },
         {
@@ -77,7 +77,6 @@ io.on("connection", (socket) => {
     } else {
       console.log("Could not create transport(server)")
     }
-
   })
 
   // creating a receive transport (for consumers)
@@ -85,11 +84,16 @@ io.on("connection", (socket) => {
     const transport = await mediasoupState.router?.createWebRtcTransport({
       listenIps: [
         {
-          ip: '0.0.0.0',
+          ip: '0.0.0.0', // my ip (ipv4)
+          announcedIp: '192.168.38.232'
         },
         {
-          ip: '::',
-        },
+          ip: "127.0.0.1", // localhost (ipv4)
+          announcedIp: "127.0.0.1"
+        }, {
+          ip: "::1", //locahost (ipv6)
+          announcedIp: "::1"
+        }
       ],
       enableTcp: true,
       enableUdp: true,
@@ -110,6 +114,8 @@ io.on("connection", (socket) => {
       // each side must exchange dtls parameters to make a handshake
       socket.on("transport-connect", async ({ dtlsParameters }, callback) => {
         try {
+          // add a plainTransport here. Retrieves the transport from the server memory.
+
           await transport.connect({ dtlsParameters })   // dtls is security layer for udp, .eg tls for tcp/http layer
           callback();
         } catch (error) {
@@ -119,7 +125,7 @@ io.on("connection", (socket) => {
 
       socket.on("consume", async ({ rtpCapabilites }, callback) => {
         try {
-          const producer = Array.from(mediasoupState.producers.values())[0];
+          const producer = Array.from(mediasoupState.producers.values())[0]
 
           if (!producer) {
             throw new Error("No producers available");
@@ -131,7 +137,7 @@ io.on("connection", (socket) => {
           const consumer = await transport.consume({
             producerId: producer.id,
             rtpCapabilities: rtpCapabilites,
-            paused: false // or true if you want to start paused
+            paused: false // true if you want to start paused
           });
 
           mediasoupState.consumers.set(socket.id, consumer);
@@ -143,9 +149,14 @@ io.on("connection", (socket) => {
             rtpParameters: consumer.rtpParameters
           });
 
-
           // Handle consumer resume
-          // socket.on("resume")
+          socket.on("consume-resume", async (callback) => {
+            const consumer = mediasoupState.consumers.get(socket.id)
+            if (consumer) {
+              await consumer.resume();
+              callback();
+            }
+          })
 
         } catch (error) {
           console.log("error", error)

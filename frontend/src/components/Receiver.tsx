@@ -1,8 +1,12 @@
 import * as mediasoupClient from "mediasoup-client";
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import io from "socket.io-client";
 
 const Receiver = () => {
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  const [stream, setStream] = useState<MediaStream | null>(null);
+
   useEffect(() => {
     const socket = io("ws://localhost:8080");
 
@@ -10,12 +14,13 @@ const Receiver = () => {
     let recvTransport: mediasoupClient.types.Transport;
     let videoConsumer: mediasoupClient.types.Consumer;
 
-    socket.on("connection", () => {
-      console.log("Client Socket Connection Successfull ");
+    socket.on("connect", async () => {
+      console.log("Client Socket Connection Successfull Receiver Page");
 
       socket.emit(
-        "getRtpCapabilities",
+        "getRtpCapabilites",
         async (rtpCapabilites: mediasoupClient.types.RtpCapabilities) => {
+          // console.log("rtpcapabilites", rtpCapabilites);
           device = new mediasoupClient.Device();
           await device.load({ routerRtpCapabilities: rtpCapabilites });
 
@@ -24,7 +29,11 @@ const Receiver = () => {
             async (
               transportOptions: mediasoupClient.types.TransportOptions
             ) => {
-              recvTransport = device.createRecvTransport(transportOptions);
+              console.log("transport options", transportOptions);
+              recvTransport = device.createRecvTransport({
+                ...transportOptions,
+                iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+              });
 
               recvTransport.on("connect", ({ dtlsParameters }, callback) => {
                 socket.emit("transport-connect", { dtlsParameters }, callback);
@@ -39,15 +48,31 @@ const Receiver = () => {
                   kind: mediasoupClient.types.MediaKind;
                   rtpParameters: mediasoupClient.types.RtpParameters;
                 }) => {
-                  videoConsumer = await recvTransport.consume({
+                  console.log("client consume transport started ");
+                  const consumer = await recvTransport.consume({
                     id: data.id,
                     producerId: data.producerId,
                     kind: data.kind,
                     rtpParameters: data.rtpParameters,
                   });
 
+                  if (consumer.kind === "video") {
+                    videoConsumer = consumer;
+                  }
+
                   //resume consumer
-                  socket.emit("consumer")
+                  socket.emit("consumer-resume", (callback: any) => {
+                    console.log(callback);
+                  });
+
+                  const { track } = consumer;
+                  console.log("track", track);
+                  if (consumer.kind === "video" && videoRef.current) {
+                    const stream = new MediaStream([track]);
+                    setStream(stream);
+                    videoRef.current.srcObject = stream;
+                    videoRef.current.play();
+                  }
                 }
               );
             }
@@ -60,6 +85,22 @@ const Receiver = () => {
   return (
     <>
       <div className="">Receiver Component</div>
+      <div>
+        <video
+          ref={videoRef}
+          autoPlay
+          muted
+          playsInline
+          controls
+          style={{
+            width: "300px",
+            margin: "5px",
+            height: "auto",
+            // transform: "scaleX(-1)", // Mirror effect
+            display: "block",
+          }}
+        />
+      </div>
     </>
   );
 };
