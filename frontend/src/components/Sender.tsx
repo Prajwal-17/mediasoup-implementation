@@ -1,18 +1,18 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { io } from "socket.io-client";
 import * as mediasoupClient from "mediasoup-client";
 
 const Sender = () => {
   // create a ref for the video element
-  const videoRef = useRef<HTMLVideoElement>(null);
-
-  // state to hold the media stream metadata
-  const [stream, setStream] = useState<MediaStream | null>(null);
+  const myVidRef = useRef<HTMLVideoElement>(null);
+  const receiverRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
     const socket = io("ws://localhost:8080");
     let device: mediasoupClient.types.Device;
     let sendTransport: mediasoupClient.types.Transport;
+    let recvTransport: mediasoupClient.types.Transport;
+    let videoConsumer: mediasoupClient.types.Consumer;
 
     socket.on("connect", async () => {
       console.log("Client Side Socket Connection Successfull", socket.id);
@@ -24,21 +24,18 @@ const Sender = () => {
           device = new mediasoupClient.Device(); // create a state to hold rtpCapabilites in frontend(mediasoup specific)
           await device.load({ routerRtpCapabilities: rtpCapabilities });
 
-          // create a send/recv transport
+          // create a send transport
           socket.emit(
             "createSendTransport",
             async (
-              transportOptions: mediasoupClient.types.TransportOptions
+              transportOptions: mediasoupClient.types.TransportOptions,
             ) => {
-              // console.log("server transport data", transportOptions);
               sendTransport = device.createSendTransport({
                 ...transportOptions,
                 iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
               }); // creates a new sendtransport object containing the remote sdp
-              console.log("Client: Transport created", sendTransport);
 
               sendTransport.on("connect", ({ dtlsParameters }, callback) => {
-                // console.log("here in transport connect");
                 socket.emit("transport-connect", { dtlsParameters }, callback);
               });
 
@@ -51,11 +48,11 @@ const Sender = () => {
                   socket.emit(
                     "transport-produce",
                     { kind, rtpParameters },
-                    ({ id }: any) => {
+                    ({ id }: { id: string }) => {
                       callback({ id });
-                    }
+                    },
                   );
-                }
+                },
               );
 
               const stream = await navigator.mediaDevices.getUserMedia({
@@ -63,19 +60,70 @@ const Sender = () => {
                 audio: true,
               });
 
-              setStream(stream);
-
-              if (videoRef.current) {
-                videoRef.current.srcObject = stream;
+              if (myVidRef.current) {
+                myVidRef.current.srcObject = stream;
               }
 
               const videoTrack = stream.getVideoTracks()[0];
               await sendTransport.produce({ track: videoTrack });
 
               console.log("Stream sent");
-            }
+            },
           );
-        }
+
+          // create a recv transport
+          socket.emit(
+            "createRecvTransport",
+            async (
+              transportOptions: mediasoupClient.types.TransportOptions,
+            ) => {
+              recvTransport = device.createRecvTransport({
+                ...transportOptions,
+                iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+              });
+
+              recvTransport.on("connect", ({ dtlsParameters }, callback) => {
+                socket.emit("transport-connect", { dtlsParameters }, callback);
+              });
+
+              socket.emit(
+                "consume",
+                {
+                  rtpCapabilities: device.rtpCapabilities,
+                },
+                async (data: {
+                  id: string;
+                  producerId: string;
+                  kind: mediasoupClient.types.MediaKind;
+                  rtpParameters: mediasoupClient.types.RtpParameters;
+                }) => {
+                  const consumer = await recvTransport.consume({
+                    id: data.id,
+                    producerId: data.producerId,
+                    kind: data.kind,
+                    rtpParameters: data.rtpParameters,
+                  });
+
+                  if (consumer.kind === "video") {
+                    videoConsumer = consumer;
+                  }
+
+                  socket.emit("consumer-resume", (callback: string) => {
+                    console.log(callback);
+                  });
+
+                  const { track } = videoConsumer;
+                  if (consumer.kind === "video") {
+                    const receiverStream = new MediaStream([track]);
+                    if (receiverRef.current) {
+                      receiverRef.current.srcObject = receiverStream;
+                    }
+                  }
+                },
+              );
+            },
+          );
+        },
       );
     });
   }, []);
@@ -83,7 +131,7 @@ const Sender = () => {
     <>
       <div>
         <video
-          ref={videoRef}
+          ref={myVidRef}
           autoPlay
           muted
           playsInline
@@ -97,6 +145,24 @@ const Sender = () => {
         />
         <div className="bg-black text-white px-2 py-3  inline-block rounded-lg m-4">
           My Video
+        </div>
+      </div>
+      <div>
+        <video
+          ref={receiverRef}
+          autoPlay
+          muted
+          playsInline
+          style={{
+            width: "300px",
+            margin: "5px",
+            height: "auto",
+            transform: "scaleX(-1)", // Mirror effect
+            display: "block",
+          }}
+        />
+        <div className="bg-black text-white px-2 py-3  inline-block rounded-lg m-4">
+          Receiver Video
         </div>
       </div>
     </>
