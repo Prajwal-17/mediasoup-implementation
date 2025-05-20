@@ -1,6 +1,7 @@
 import { Server } from "socket.io";
 import { createServer } from "node:http";
 import { mediasoupState } from ".";
+import * as mediasoup from "mediasoup";
 
 const server = createServer();
 const io = new Server(server, {
@@ -52,15 +53,19 @@ io.on("connection", (socket) => {
       // Handle dtls
       // dtls is required to establish a connection securly btw peers
       // each side must exchange dtls parameters to make a handshake
-      socket.on("transport-connect", async ({ dtlsParameters }, callback) => {
-        try {
-          console.log("transport", mediasoupState.transports);
-          await transport.connect({ dtlsParameters }); // dtls is security layer for udp, .eg tls for tcp/http layer
-          callback();
-        } catch (error) {
-          console.log("Transport connect error", error);
-        }
-      });
+      socket.on(
+        "send-transport-connect",
+        async ({ dtlsParameters }, callback) => {
+          try {
+            // add a plainTransport here. Retrieves the transport from the server memory.(optional)
+            const sendTransport = mediasoupState.transports.get(transport.id);
+            await sendTransport?.connect({ dtlsParameters }); // dtls is security layer for udp, .eg tls for tcp/http layer
+            callback();
+          } catch (error) {
+            console.log("Transport connect error", error);
+          }
+        },
+      );
 
       // rtpParameters => this describes the media sent by producer to mediasoup or mediasoup to consumer
       socket.on(
@@ -111,52 +116,65 @@ io.on("connection", (socket) => {
       // Handle dtls
       // dtls is required to establish a connection securly btw peers
       // each side must exchange dtls parameters to make a handshake
-      socket.on("transport-connect", async ({ dtlsParameters }, callback) => {
-        try {
-          // add a plainTransport here. Retrieves the transport from the server memory.
+      socket.on(
+        "recv-transport-connect",
+        async ({ dtlsParameters }, callback) => {
+          try {
+            // add a plainTransport here. Retrieves the transport from the server memory.(optional)
+            const recvTransport = mediasoupState.transports.get(transport.id);
 
-          await transport.connect({ dtlsParameters }); // dtls is security layer for udp, .eg tls for tcp/http layer
-          callback();
-        } catch (error) {
-          console.log("error", error);
-        }
-      });
-
-      socket.on("consume", async ({ rtpCapabilites }, callback) => {
-        try {
-          const producer = Array.from(mediasoupState.producers.values())[0];
-
-          if (!producer) {
-            throw new Error("No producers available");
+            await recvTransport?.connect({ dtlsParameters }); // dtls is security layer for udp, .eg tls for tcp/http layer
+            callback();
+          } catch (error) {
+            console.log("error", error);
           }
+        },
+      );
 
-          // create consumer
-          const consumer = await transport.consume({
-            producerId: producer.id,
-            rtpCapabilities: rtpCapabilites,
-            paused: false, // true if you want to start paused
-          });
+      socket.on(
+        "transport-consume",
+        async (
+          {
+            rtpCapabilites,
+          }: { rtpCapabilites: mediasoup.types.RtpCapabilities },
+          callback,
+        ) => {
+          try {
+            // const producer = mediasoupState.producers.get(socket.id);
+            const producer = Array.from(mediasoupState.producers.values())[0];
 
-          mediasoupState.consumers.set(socket.id, consumer);
+            // if (!producer) {
+            //   throw new Error("No producers available");
+            // }
 
-          callback({
-            id: consumer.id,
-            producerId: producer.id,
-            kind: consumer.kind,
-            rtpParameters: consumer.rtpParameters,
-          });
+            // create consumer
+            const consumer = await transport.consume({
+              producerId: producer.id,
+              rtpCapabilities: rtpCapabilites,
+              paused: false, // true if you want to start paused
+            });
 
-          socket.on("consume-resume", async (callback) => {
-            const consumer = mediasoupState.consumers.get(socket.id);
-            if (consumer) {
-              await consumer.resume();
-              callback();
-            }
-          });
-        } catch (error) {
-          console.log("error", error);
-        }
-      });
+            mediasoupState.consumers.set(socket.id, consumer);
+
+            callback({
+              id: consumer.id,
+              producerId: producer.id,
+              kind: consumer.kind,
+              rtpParameters: consumer.rtpParameters,
+            });
+
+            socket.on("consume-resume", async (callback) => {
+              const consumer = mediasoupState.consumers.get(socket.id);
+              if (consumer) {
+                await consumer.resume();
+                callback();
+              }
+            });
+          } catch (error) {
+            console.log("error", error);
+          }
+        },
+      );
     } else {
       console.log("Could not create transport(server)");
     }

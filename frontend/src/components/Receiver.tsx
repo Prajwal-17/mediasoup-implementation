@@ -35,11 +35,15 @@ const Receiver = () => {
               });
 
               recvTransport.on("connect", ({ dtlsParameters }, callback) => {
-                socket.emit("transport-connect", { dtlsParameters }, callback);
+                socket.emit(
+                  "recv-transport-connect",
+                  { dtlsParameters },
+                  callback,
+                );
               });
 
               socket.emit(
-                "consume",
+                "transport-consume",
                 { rtpCapabilites: device.rtpCapabilities },
                 async (data: {
                   id: string;
@@ -85,7 +89,11 @@ const Receiver = () => {
               });
 
               sendTransport.on("connect", ({ dtlsParameters }, callback) => {
-                socket.emit("transport-connect", { dtlsParameters }, callback);
+                socket.emit(
+                  "send-transport-connect",
+                  { dtlsParameters },
+                  callback,
+                );
               });
 
               sendTransport.on(

@@ -11,8 +11,8 @@ const Sender = () => {
     const socket = io("ws://localhost:8080");
     let device: mediasoupClient.types.Device;
     let sendTransport: mediasoupClient.types.Transport;
-    let recvTransport: mediasoupClient.types.Transport;
-    let videoConsumer: mediasoupClient.types.Consumer;
+    // let recvTransport: mediasoupClient.types.Transport;
+    // let videoConsumer: mediasoupClient.types.Consumer;
 
     socket.on("connect", async () => {
       console.log("Client Side Socket Connection Successfull", socket.id);
@@ -36,7 +36,11 @@ const Sender = () => {
               }); // creates a new sendtransport object containing the remote sdp
 
               sendTransport.on("connect", ({ dtlsParameters }, callback) => {
-                socket.emit("transport-connect", { dtlsParameters }, callback);
+                socket.emit(
+                  "send-transport-connect",
+                  { dtlsParameters },
+                  callback,
+                );
               });
 
               // setup a listner on produce event, fires when sendTransport.produce() is called locally
@@ -72,57 +76,55 @@ const Sender = () => {
           );
 
           // create a recv transport
-          socket.emit(
-            "createRecvTransport",
-            async (
-              transportOptions: mediasoupClient.types.TransportOptions,
-            ) => {
-              recvTransport = device.createRecvTransport({
-                ...transportOptions,
-                iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
-              });
-
-              recvTransport.on("connect", ({ dtlsParameters }, callback) => {
-                socket.emit("transport-connect", { dtlsParameters }, callback);
-              });
-
-              socket.emit(
-                "consume",
-                {
-                  rtpCapabilities: device.rtpCapabilities,
-                },
-                async (data: {
-                  id: string;
-                  producerId: string;
-                  kind: mediasoupClient.types.MediaKind;
-                  rtpParameters: mediasoupClient.types.RtpParameters;
-                }) => {
-                  const consumer = await recvTransport.consume({
-                    id: data.id,
-                    producerId: data.producerId,
-                    kind: data.kind,
-                    rtpParameters: data.rtpParameters,
-                  });
-
-                  if (consumer.kind === "video") {
-                    videoConsumer = consumer;
-                  }
-
-                  socket.emit("consumer-resume", (callback: string) => {
-                    console.log(callback);
-                  });
-
-                  const { track } = videoConsumer;
-                  if (consumer.kind === "video") {
-                    const receiverStream = new MediaStream([track]);
-                    if (receiverRef.current) {
-                      receiverRef.current.srcObject = receiverStream;
-                    }
-                  }
-                },
-              );
-            },
-          );
+          // socket.emit(
+          //   "createRecvTransport",
+          //   async (
+          //     transportOptions: mediasoupClient.types.TransportOptions,
+          //   ) => {
+          //     recvTransport = device.createRecvTransport({
+          //       ...transportOptions,
+          //       iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+          //     });
+          //     recvTransport.on("connect", ({ dtlsParameters }, callback) => {
+          //       socket.emit(
+          //         "recv-transport-connect",
+          //         { dtlsParameters },
+          //         callback,
+          //       );
+          //     });
+          //     socket.emit(
+          //       "transport-consume",
+          //       { rtpCapabilities: device.rtpCapabilities },
+          //       async (data: {
+          //         id: string;
+          //         producerId: string;
+          //         kind: mediasoupClient.types.MediaKind;
+          //         rtpParameters: mediasoupClient.types.RtpParameters;
+          //       }) => {
+          //         const consumer = await recvTransport.consume({
+          //           id: data.id,
+          //           producerId: data.producerId,
+          //           kind: data.kind,
+          //           rtpParameters: data.rtpParameters,
+          //         });
+          //         if (consumer.kind === "video") {
+          //           videoConsumer = consumer;
+          //         }
+          //         socket.emit("consumer-resume", (callback: string) => {
+          //           console.log(callback);
+          //         });
+          //
+          //         const { track } = videoConsumer;
+          //         if (consumer.kind === "video") {
+          //           const receiverStream = new MediaStream([track]);
+          //           if (receiverRef.current) {
+          //             receiverRef.current.srcObject = receiverStream;
+          //           }
+          //         }
+          //       },
+          //     );
+          //   },
+          // );
         },
       );
     });
