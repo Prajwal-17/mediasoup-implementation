@@ -1,8 +1,8 @@
 import { useEffect, useRef } from "react";
-import { io } from "socket.io-client";
 import * as mediasoupClient from "mediasoup-client";
+import { io } from "socket.io-client";
 
-const Sender = () => {
+const CallComponent = () => {
   // create a ref for the video element
   const myVidRef = useRef<HTMLVideoElement>(null);
   const receiverRef = useRef<HTMLVideoElement>(null);
@@ -12,7 +12,6 @@ const Sender = () => {
     let device: mediasoupClient.types.Device;
     let sendTransport: mediasoupClient.types.Transport;
     let recvTransport: mediasoupClient.types.Transport;
-    let videoConsumer: mediasoupClient.types.Consumer;
 
     socket.on("connect", async () => {
       console.log("Client Side Socket Connection Successfull", socket.id);
@@ -21,6 +20,7 @@ const Sender = () => {
       socket.emit(
         "getRtpCapabilites",
         async (rtpCapabilities: mediasoupClient.types.RtpCapabilities) => {
+          console.log("rtpcap", rtpCapabilities);
           device = new mediasoupClient.Device(); // create a state to hold rtpCapabilites in frontend(mediasoup specific)
           await device.load({ routerRtpCapabilities: rtpCapabilities });
 
@@ -28,14 +28,16 @@ const Sender = () => {
           socket.emit(
             "createSendTransport",
             async (
-              transportOptions: mediasoupClient.types.TransportOptions,
+              transportOptions: mediasoupClient.types.TransportOptions, // sending a callback function
             ) => {
               sendTransport = device.createSendTransport({
                 ...transportOptions,
                 iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
               }); // creates a new sendtransport object containing the remote sdp
 
+              // pass dtls to make a handshake with server
               sendTransport.on("connect", ({ dtlsParameters }, callback) => {
+                console.log("dtlsprams", dtlsParameters);
                 socket.emit(
                   "send-transport-connect",
                   { dtlsParameters },
@@ -48,14 +50,23 @@ const Sender = () => {
               // rtpParameters : encoding/decoding params of the media
               sendTransport.on(
                 "produce",
-                ({ kind, rtpParameters }, callback) => {
-                  socket.emit(
-                    "transport-produce",
-                    { kind, rtpParameters },
-                    ({ id }: { id: string }) => {
-                      callback({ id });
-                    },
-                  );
+                async ({ kind, rtpParameters }, callback) => {
+                  try {
+                    console.log("sendTransport.on");
+
+                    // Emit the event and wait for the server response
+                    socket.emit(
+                      "transport-produce",
+                      { kind, rtpParameters },
+                      ({ id }: any) => {
+                        console.log("Producer ID received from server:", id);
+
+                        callback({ id });
+                      },
+                    );
+                  } catch (error) {
+                    console.error("Error in produce event:", error);
+                  }
                 },
               );
 
@@ -69,13 +80,12 @@ const Sender = () => {
               }
 
               const videoTrack = stream.getVideoTracks()[0];
-              await sendTransport.produce({ track: videoTrack });
+              await sendTransport.produce({ track: videoTrack }); // trigger a producer to send stream
 
               console.log("Stream sent");
             },
           );
 
-          // create a recv transport
           socket.emit(
             "createRecvTransport",
             async (
@@ -85,55 +95,55 @@ const Sender = () => {
                 ...transportOptions,
                 iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
               });
+
               recvTransport.on("connect", ({ dtlsParameters }, callback) => {
                 socket.emit(
-                  "recv-transport-connect",
+                  "recv-tranport-connect",
                   { dtlsParameters },
                   callback,
                 );
               });
+            },
+          );
 
-              // check producer exits if true connect
-
-              socket.emit("getProducers");
-
-              socket.emit(
-                "transport-consume",
-                { rtpCapabilities: device.rtpCapabilities },
-                async (data: {
-                  id: string;
-                  producerId: string;
-                  kind: mediasoupClient.types.MediaKind;
-                  rtpParameters: mediasoupClient.types.RtpParameters;
-                }) => {
+          socket.on("newproducer", async ({ producerId }) => {
+            console.log("new produer");
+            socket.emit(
+              "transport-consume",
+              { producerId, rtpCapabilities: device.rtpCapabilities },
+              async (data: {
+                id: string;
+                producerId: string;
+                kind: mediasoupClient.types.MediaKind;
+                rtpParameters: mediasoupClient.types.RtpParameters;
+              }) => {
+                try {
                   const consumer = await recvTransport.consume({
                     id: data.id,
                     producerId: data.producerId,
                     kind: data.kind,
                     rtpParameters: data.rtpParameters,
                   });
-                  if (consumer.kind === "video") {
-                    videoConsumer = consumer;
-                  }
-                  socket.emit("consumer-resume", (callback: string) => {
-                    console.log(callback);
-                  });
 
-                  const { track } = videoConsumer;
-                  if (consumer.kind === "video") {
-                    const receiverStream = new MediaStream([track]);
-                    if (receiverRef.current) {
-                      receiverRef.current.srcObject = receiverStream;
-                    }
+                  const stream = new MediaStream();
+                  stream.addTrack(consumer.track);
+
+                  if (receiverRef.current) {
+                    receiverRef.current.srcObject = stream;
+                    receiverRef.current.play();
                   }
-                },
-              );
-            },
-          );
+                  console.log("Receiving media stream from:", data.producerId);
+                } catch (error) {
+                  console.log("error in transport consume");
+                }
+              },
+            );
+          });
         },
       );
     });
   }, []);
+
   return (
     <>
       <div>
@@ -176,4 +186,4 @@ const Sender = () => {
   );
 };
 
-export default Sender;
+export default CallComponent;

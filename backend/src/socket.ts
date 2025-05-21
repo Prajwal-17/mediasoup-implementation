@@ -10,6 +10,10 @@ const io = new Server(server, {
   },
 });
 
+// setInterval(() => {
+//   console.log("producers", mediasoupState.producers);
+// }, 3000);
+
 io.on("connection", (socket) => {
   console.log("User connected to socket server");
 
@@ -71,9 +75,11 @@ io.on("connection", (socket) => {
       socket.on(
         "transport-produce",
         async ({ kind, rtpParameters }, callback) => {
+          console.log("(server)here in produce");
           const producer = await transport.produce({ kind, rtpParameters });
 
           mediasoupState.producers.set(socket.id, producer);
+          socket.emit("newproducer", { producerId: producer.id });
           callback({ id: producer.id });
         },
       );
@@ -133,23 +139,74 @@ io.on("connection", (socket) => {
 
       socket.on(
         "transport-consume",
+        async ({ producerId, rtpCapabilities }, callback) => {
+          try {
+            const router = mediasoupState.router;
+            const transport = mediasoupState.transports.get(socket.id);
+
+            if (!router || !transport) {
+              return callback({ error: "Router or transport not found" });
+            }
+
+            if (!router.canConsume({ producerId, rtpCapabilities })) {
+              return callback({ error: "Cannot Consume" });
+            }
+
+            const consumer = await transport.consume({
+              producerId,
+              rtpCapabilities,
+              paused: false, // can be true if you want to pause initially
+            });
+
+            callback({
+              id: consumer.id,
+              producerId,
+              kind: consumer.kind,
+              rtpParameters: consumer.rtpParameters,
+              // type: consumer.type,
+              // appData: consumer.appData,
+              // producerPaused: consumer.producerPaused,
+            });
+          } catch (error) {
+            console.log("error in transport-consume", error);
+          }
+        },
+      );
+
+      socket.on(
+        "transport-consume",
         async (
           {
+            transportId,
+            producerId,
             rtpCapabilites,
-          }: { rtpCapabilites: mediasoup.types.RtpCapabilities },
+          }: {
+            rtpCapabilites: mediasoup.types.RtpCapabilities;
+            transportId: string;
+            producerId: string;
+          },
           callback,
         ) => {
           try {
-            // const producer = mediasoupState.producers.get(socket.id);
-            const producer = Array.from(mediasoupState.producers.values())[0];
+            console.log("backend producer id ", producerId);
+            //k const producer = mediasoupState.producers.get(socket.id)
+            // const producer = Array.from(
+            // con
+            //   mediasoupState.producers.switch).producer.filter((prod) => prod.id !== socket.id);
+            // const producerId = Array.from(
+            //   mediasoupState.producers.keys(),
+            // ).filter((prod: any) => prod !== socket.id);
 
+            // const producer = mediasoupState.producers.get(producerId[0]);
+
+            // console.log("here producer ", producer);
             // if (!producer) {
-            //   throw new Error("No producers available");
+            //   throw new Error("No producer available");
             // }
-
+            //
             // create consumer
             const consumer = await transport.consume({
-              producerId: producer.id,
+              producerId: producerId,
               rtpCapabilities: rtpCapabilites,
               paused: false, // true if you want to start paused
             });
@@ -158,7 +215,7 @@ io.on("connection", (socket) => {
 
             callback({
               id: consumer.id,
-              producerId: producer.id,
+              producerId: consumer.producerId,
               kind: consumer.kind,
               rtpParameters: consumer.rtpParameters,
             });
