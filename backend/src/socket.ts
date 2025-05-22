@@ -2,6 +2,7 @@ import { Server } from "socket.io";
 import { createServer } from "node:http";
 import { mediasoupState } from ".";
 import * as mediasoup from "mediasoup";
+import { stat } from "node:fs";
 
 const server = createServer();
 const io = new Server(server, {
@@ -10,9 +11,10 @@ const io = new Server(server, {
   },
 });
 
-// setInterval(() => {
-//   console.log("producers", mediasoupState.producers);
-// }, 3000);
+setInterval(() => {
+  console.log("producers", mediasoupState.producers.keys());
+  console.log("consumers", mediasoupState.consumers.keys());
+}, 3000);
 
 io.on("connection", (socket) => {
   console.log("User connected to socket server");
@@ -75,11 +77,22 @@ io.on("connection", (socket) => {
       socket.on(
         "transport-produce",
         async ({ kind, rtpParameters }, callback) => {
-          console.log("(server)here in produce");
           const producer = await transport.produce({ kind, rtpParameters });
 
+          // producer.observer.on("close", () => {
+          //   console.log("closed");
+          // });
+          // const stats = await producer.getStats();
+          // // producer.observer.on("rtp")
+          // console.log("stats", stats);
+
           mediasoupState.producers.set(socket.id, producer);
-          socket.emit("newproducer", { producerId: producer.id });
+
+          // broadcast to *all other* sockets
+          socket.broadcast.emit("new-producer", {
+            producerId: producer.id,
+            producerSocketId: socket.id,
+          });
           callback({ id: producer.id });
         },
       );
@@ -141,8 +154,13 @@ io.on("connection", (socket) => {
         "transport-consume",
         async ({ producerId, rtpCapabilities }, callback) => {
           try {
+            console.log("reached here");
             const router = mediasoupState.router;
             const transport = mediasoupState.transports.get(socket.id);
+            console.log(
+              "Can consume:",
+              router?.canConsume({ producerId, rtpCapabilities }),
+            );
 
             if (!router || !transport) {
               return callback({ error: "Router or transport not found" });
@@ -157,6 +175,8 @@ io.on("connection", (socket) => {
               rtpCapabilities,
               paused: false, // can be true if you want to pause initially
             });
+            mediasoupState.consumers.set(socket.id, consumer);
+            console.log("consumer server1", consumer);
 
             callback({
               id: consumer.id,
@@ -173,65 +193,13 @@ io.on("connection", (socket) => {
         },
       );
 
-      socket.on(
-        "transport-consume",
-        async (
-          {
-            transportId,
-            producerId,
-            rtpCapabilites,
-          }: {
-            rtpCapabilites: mediasoup.types.RtpCapabilities;
-            transportId: string;
-            producerId: string;
-          },
-          callback,
-        ) => {
-          try {
-            console.log("backend producer id ", producerId);
-            //k const producer = mediasoupState.producers.get(socket.id)
-            // const producer = Array.from(
-            // con
-            //   mediasoupState.producers.switch).producer.filter((prod) => prod.id !== socket.id);
-            // const producerId = Array.from(
-            //   mediasoupState.producers.keys(),
-            // ).filter((prod: any) => prod !== socket.id);
-
-            // const producer = mediasoupState.producers.get(producerId[0]);
-
-            // console.log("here producer ", producer);
-            // if (!producer) {
-            //   throw new Error("No producer available");
-            // }
-            //
-            // create consumer
-            const consumer = await transport.consume({
-              producerId: producerId,
-              rtpCapabilities: rtpCapabilites,
-              paused: false, // true if you want to start paused
-            });
-
-            mediasoupState.consumers.set(socket.id, consumer);
-
-            callback({
-              id: consumer.id,
-              producerId: consumer.producerId,
-              kind: consumer.kind,
-              rtpParameters: consumer.rtpParameters,
-            });
-
-            socket.on("consume-resume", async (callback) => {
-              const consumer = mediasoupState.consumers.get(socket.id);
-              if (consumer) {
-                await consumer.resume();
-                callback();
-              }
-            });
-          } catch (error) {
-            console.log("error", error);
-          }
-        },
-      );
+      socket.on("consume-resume", async (callback) => {
+        const consumer = mediasoupState.consumers.get(socket.id);
+        if (consumer) {
+          await consumer.resume();
+        }
+        callback("resumed");
+      });
     } else {
       console.log("Could not create transport(server)");
     }

@@ -14,13 +14,16 @@ const CallComponent = () => {
     let recvTransport: mediasoupClient.types.Transport;
 
     socket.on("connect", async () => {
+      socket.on("error", (err) => {
+        console.log("socket error", err);
+      });
       console.log("Client Side Socket Connection Successfull", socket.id);
 
       // get router rtp capabilities from server and store it
       socket.emit(
         "getRtpCapabilites",
         async (rtpCapabilities: mediasoupClient.types.RtpCapabilities) => {
-          console.log("rtpcap", rtpCapabilities);
+          // console.log("rtpcap", rtpCapabilities);
           device = new mediasoupClient.Device(); // create a state to hold rtpCapabilites in frontend(mediasoup specific)
           await device.load({ routerRtpCapabilities: rtpCapabilities });
 
@@ -98,7 +101,7 @@ const CallComponent = () => {
 
               recvTransport.on("connect", ({ dtlsParameters }, callback) => {
                 socket.emit(
-                  "recv-tranport-connect",
+                  "recv-transport-connect",
                   { dtlsParameters },
                   callback,
                 );
@@ -106,39 +109,72 @@ const CallComponent = () => {
             },
           );
 
-          socket.on("newproducer", async ({ producerId }) => {
-            console.log("new produer");
-            socket.emit(
-              "transport-consume",
-              { producerId, rtpCapabilities: device.rtpCapabilities },
-              async (data: {
-                id: string;
-                producerId: string;
-                kind: mediasoupClient.types.MediaKind;
-                rtpParameters: mediasoupClient.types.RtpParameters;
-              }) => {
-                try {
-                  const consumer = await recvTransport.consume({
-                    id: data.id,
-                    producerId: data.producerId,
-                    kind: data.kind,
-                    rtpParameters: data.rtpParameters,
-                  });
+          // — inside your useEffect, after creating recvTransport —
+          socket.on(
+            "new-producer",
+            async ({
+              producerId,
+              producerSocketId,
+            }: {
+              producerId: string;
+              producerSocketId: string;
+            }) => {
+              console.log("new-producer", producerId, "from", producerSocketId);
 
-                  const stream = new MediaStream();
-                  stream.addTrack(consumer.track);
+              // 1️⃣ ignore your own broadcast
+              if (producerSocketId === socket.id) return;
 
-                  if (receiverRef.current) {
-                    receiverRef.current.srcObject = stream;
-                    receiverRef.current.play();
+              // 2️⃣ request to consume that peer’s producer
+              socket.emit(
+                "transport-consume",
+                {
+                  producerId,
+                  rtpCapabilities: device.rtpCapabilities,
+                },
+                async (data: {
+                  id: string;
+                  producerId: string;
+                  kind: mediasoupClient.types.MediaKind;
+                  rtpParameters: mediasoupClient.types.RtpParameters;
+                  error?: string;
+                }) => {
+                  if (data.error) {
+                    console.error("Cannot consume:", data.error);
+                    return;
                   }
-                  console.log("Receiving media stream from:", data.producerId);
-                } catch (error) {
-                  console.log("error in transport consume");
-                }
-              },
-            );
-          });
+
+                  try {
+                    console.log("before consumer", recvTransport);
+                    const consumer = await recvTransport.consume({
+                      id: data.id,
+                      producerId: data.producerId,
+                      kind: data.kind,
+                      rtpParameters: data.rtpParameters,
+                    });
+
+                    console.log("consumer created", consumer);
+
+                    socket.emit("consume-resume", (callback: string) => {
+                      console.log("server response:", callback);
+                    });
+
+                    if (consumer.kind === "video" && receiverRef.current) {
+                      const stream = new MediaStream([consumer.track]);
+                      receiverRef.current.srcObject = stream;
+                    }
+                    await consumer.resume();
+
+                    console.log(
+                      "Receiving media stream from peer:",
+                      data.producerId,
+                    );
+                  } catch (err) {
+                    console.error("error in transport-consume callback:", err);
+                  }
+                },
+              );
+            },
+          );
         },
       );
     });
@@ -179,7 +215,7 @@ const CallComponent = () => {
           }}
         />
         <div className="bg-black text-white px-2 py-3  inline-block rounded-lg m-4">
-          Receiver Video
+          My Video
         </div>
       </div>
     </>
