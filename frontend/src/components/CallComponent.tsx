@@ -6,6 +6,7 @@ const CallComponent = () => {
   // create a ref for the video element
   const myVidRef = useRef<HTMLVideoElement>(null);
   const receiverRef = useRef<HTMLVideoElement>(null);
+  let videoConsumer: mediasoupClient.types.Consumer;
 
   useEffect(() => {
     const socket = io("ws://localhost:8080");
@@ -120,11 +121,15 @@ const CallComponent = () => {
               producerSocketId: string;
             }) => {
               console.log("new-producer", producerId, "from", producerSocketId);
+              console.log(producerId, producerId);
 
-              // 1️⃣ ignore your own broadcast
-              if (producerSocketId === socket.id) return;
+              // ignore your own broadcast
+              if (producerSocketId === socket.id) {
+                console.log("ignored");
+                return;
+              }
 
-              // 2️⃣ request to consume that peer’s producer
+              // request to consume that peer’s producer
               socket.emit(
                 "transport-consume",
                 {
@@ -146,8 +151,8 @@ const CallComponent = () => {
                   try {
                     console.log("before consumer", recvTransport);
                     const consumer = await recvTransport.consume({
-                      id: data.id,
                       producerId: data.producerId,
+                      id: data.id,
                       kind: data.kind,
                       rtpParameters: data.rtpParameters,
                     });
@@ -158,11 +163,16 @@ const CallComponent = () => {
                       console.log("server response:", callback);
                     });
 
-                    if (consumer.kind === "video" && receiverRef.current) {
-                      const stream = new MediaStream([consumer.track]);
-                      receiverRef.current.srcObject = stream;
+                    if (consumer.kind === "video") {
+                      videoConsumer = consumer;
                     }
-                    await consumer.resume();
+
+                    if (consumer.kind === "video" && receiverRef.current) {
+                      const stream = new MediaStream([videoConsumer.track]);
+                      receiverRef.current.srcObject = stream;
+                      receiverRef.current.play();
+                    }
+                    consumer.resume();
 
                     console.log(
                       "Receiving media stream from peer:",

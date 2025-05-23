@@ -2,7 +2,6 @@ import { Server } from "socket.io";
 import { createServer } from "node:http";
 import { mediasoupState } from ".";
 import * as mediasoup from "mediasoup";
-import { stat } from "node:fs";
 
 const server = createServer();
 const io = new Server(server, {
@@ -78,13 +77,6 @@ io.on("connection", (socket) => {
         "transport-produce",
         async ({ kind, rtpParameters }, callback) => {
           const producer = await transport.produce({ kind, rtpParameters });
-
-          // producer.observer.on("close", () => {
-          //   console.log("closed");
-          // });
-          // const stats = await producer.getStats();
-          // // producer.observer.on("rtp")
-          // console.log("stats", stats);
 
           mediasoupState.producers.set(socket.id, producer);
 
@@ -176,7 +168,6 @@ io.on("connection", (socket) => {
               paused: false, // can be true if you want to pause initially
             });
             mediasoupState.consumers.set(socket.id, consumer);
-            console.log("consumer server1", consumer);
 
             callback({
               id: consumer.id,
@@ -202,6 +193,28 @@ io.on("connection", (socket) => {
       });
     } else {
       console.log("Could not create transport(server)");
+    }
+  });
+
+  socket.on("disconnect", () => {
+    console.log("User disconnected:", socket.id);
+
+    const producer = mediasoupState.producers.get(socket.id);
+    if (producer) {
+      producer.close();
+      mediasoupState.producers.delete(socket.id);
+    }
+
+    const consumer = mediasoupState.consumers.get(socket.id);
+    if (consumer) {
+      consumer.close();
+      mediasoupState.consumers.delete(socket.id);
+    }
+
+    const transport = mediasoupState.transports.get(socket.id);
+    if (transport) {
+      transport.close();
+      mediasoupState.transports.delete(socket.id);
     }
   });
 });
