@@ -1,7 +1,7 @@
 import { Server } from "socket.io";
 import { createServer } from "node:http";
 import { mediasoupState } from ".";
-import * as mediasoup from "mediasoup";
+import { v4 as uuidv4 } from "uuid"
 
 const server = createServer();
 const io = new Server(server, {
@@ -10,10 +10,11 @@ const io = new Server(server, {
   },
 });
 
-setInterval(() => {
-  console.log("producers", mediasoupState.producers.keys());
-  console.log("consumers", mediasoupState.consumers.keys());
-}, 3000);
+// setInterval(() => {
+//   console.log("producers", mediasoupState.producers.keys());
+//   console.log("consumers", mediasoupState.consumers.keys());
+//   console.log("transports", mediasoupState.transports.keys())
+// }, 3000);
 
 io.on("connection", (socket) => {
   console.log("User connected to socket server");
@@ -30,15 +31,15 @@ io.on("connection", (socket) => {
       listenIps: [
         {
           ip: "0.0.0.0", // this is the localip that mediasoup is runnning (onserver) -> localip(sameNetwork)
-          announcedIp: "192.168.38.232", // this is the public ip that is sent to clients to connect back to server -> publicip
+          // announcedIp: "192.168.38.232", // this is the public ip that is sent to clients to connect back to server -> publicip
         },
         {
           ip: "127.0.0.1", // localhost (ipv4)
-          announcedIp: "127.0.0.1",
+          // announcedIp: "127.0.0.1",
         },
         {
           ip: "::1", //locahost (ipv6)
-          announcedIp: "::1",
+          // announcedIp: "::1",
         },
       ],
       enableUdp: true,
@@ -46,14 +47,17 @@ io.on("connection", (socket) => {
       preferUdp: true,
     });
 
+
     if (transport) {
-      mediasoupState.transports.set(socket.id, transport);
+      const sendTransportId = `sendTransport_${uuidv4()}`
+      mediasoupState.transports.set(sendTransportId, transport);
       callback({
         id: transport?.id,
         iceParameters: transport.iceParameters, // include information like the ICE username fragment and password.
         iceCandidates: transport.iceCandidates, // these are network ip addresses and ports with protocols used to connect
         dtlsParameters: transport.dtlsParameters, // (Datagram Transport Layer Security) provides security and encryption for media streams
       });
+
 
       // Handle dtls
       // dtls is required to establish a connection securly btw peers
@@ -63,7 +67,7 @@ io.on("connection", (socket) => {
         async ({ dtlsParameters }, callback) => {
           try {
             // add a plainTransport here. Retrieves the transport from the server memory.(optional)
-            const sendTransport = mediasoupState.transports.get(transport.id);
+            const sendTransport = mediasoupState.transports.get(sendTransportId);
             await sendTransport?.connect({ dtlsParameters }); // dtls is security layer for udp, .eg tls for tcp/http layer
             callback();
           } catch (error) {
@@ -72,20 +76,32 @@ io.on("connection", (socket) => {
         },
       );
 
+      transport.on("icestatechange", (state) => {
+        console.log(`ICE state (${transport.id}):`, state);
+      });
+      transport.on("dtlsstatechange", (state) => {
+        if (state === "failed") console.log("DTLS failed");
+      });
+
       // rtpParameters => this describes the media sent by producer to mediasoup or mediasoup to consumer
       socket.on(
         "transport-produce",
         async ({ kind, rtpParameters }, callback) => {
-          const producer = await transport.produce({ kind, rtpParameters });
+          try {
+            const producer = await transport.produce({ kind, rtpParameters });
 
-          mediasoupState.producers.set(socket.id, producer);
+            const producerId = `producer_${uuidv4()}`
+            mediasoupState.producers.set(producerId, producer);
 
-          // broadcast to *all other* sockets
-          socket.broadcast.emit("new-producer", {
-            producerId: producer.id,
-            producerSocketId: socket.id,
-          });
-          callback({ id: producer.id });
+            // broadcast to all other sockets except sender
+            socket.broadcast.emit("new-producer", {
+              producerId: producer.id,
+              producerSocketId: socket.id,
+            });
+            callback({ id: producer.id });
+          } catch (error) {
+            console.log("Error in transport-produce event", error)
+          }
         },
       );
     } else {
@@ -99,15 +115,15 @@ io.on("connection", (socket) => {
       listenIps: [
         {
           ip: "0.0.0.0", // listen on all available networks
-          announcedIp: "192.168.38.232",
+          // announcedIp: "192.168.38.232",
         },
         {
           ip: "127.0.0.1", // localhost (ipv4)
-          announcedIp: "127.0.0.1",
+          // announcedIp: "127.0.0.1",
         },
         {
           ip: "::1", //locahost (ipv6)
-          announcedIp: "::1",
+          // announcedIp: "::1",
         },
       ],
       enableTcp: true,
@@ -116,7 +132,9 @@ io.on("connection", (socket) => {
     });
 
     if (transport) {
-      mediasoupState.transports.set(socket.id, transport);
+      const recvTransportId = `recvTransport_${uuidv4()}`
+      mediasoupState.transports.set(recvTransportId, transport);
+
       callback({
         id: transport?.id,
         iceParameters: transport.iceParameters, // include information like the ICE username fragment and password.
@@ -132,8 +150,7 @@ io.on("connection", (socket) => {
         async ({ dtlsParameters }, callback) => {
           try {
             // add a plainTransport here. Retrieves the transport from the server memory.(optional)
-            const recvTransport = mediasoupState.transports.get(transport.id);
-
+            const recvTransport = mediasoupState.transports.get(recvTransportId);
             await recvTransport?.connect({ dtlsParameters }); // dtls is security layer for udp, .eg tls for tcp/http layer
             callback();
           } catch (error) {
@@ -146,15 +163,14 @@ io.on("connection", (socket) => {
         "transport-consume",
         async ({ producerId, rtpCapabilities }, callback) => {
           try {
-            console.log("reached here");
             const router = mediasoupState.router;
-            const transport = mediasoupState.transports.get(socket.id);
+            const recvTransport = mediasoupState.transports.get(recvTransportId);
             console.log(
               "Can consume:",
               router?.canConsume({ producerId, rtpCapabilities }),
             );
 
-            if (!router || !transport) {
+            if (!router || !recvTransport) {
               return callback({ error: "Router or transport not found" });
             }
 
@@ -162,11 +178,12 @@ io.on("connection", (socket) => {
               return callback({ error: "Cannot Consume" });
             }
 
-            const consumer = await transport.consume({
+            const consumer = await recvTransport.consume({
               producerId,
               rtpCapabilities,
               paused: false, // can be true if you want to pause initially
             });
+
             mediasoupState.consumers.set(socket.id, consumer);
 
             callback({
@@ -174,9 +191,6 @@ io.on("connection", (socket) => {
               producerId,
               kind: consumer.kind,
               rtpParameters: consumer.rtpParameters,
-              // type: consumer.type,
-              // appData: consumer.appData,
-              // producerPaused: consumer.producerPaused,
             });
           } catch (error) {
             console.log("error in transport-consume", error);
