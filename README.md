@@ -1,7 +1,5 @@
 # MediaSoup Implementation
 
-## Features
-
 ## Project Structure
 
 - **`frontend/`**: React application for the user interface.
