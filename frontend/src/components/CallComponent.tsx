@@ -58,7 +58,9 @@ const CallComponent = () => {
                         "transport-produce",
                         { kind, rtpParameters },
                         ({ id }: any) => {
-                          callback({ id });
+                          callback({ id });  
+                          // this callback func is from the mediasoup-client not from the socket.io(not a acknowledge fnc)
+                          // callback({id}) is to tell the mediasoup client that id has been received from the server
                         }
                       );
                     } catch (error) {
