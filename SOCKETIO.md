@@ -1,6 +1,7 @@
 # Socket.io
 
 ### Cheatsheet - [Socket.io CheatSheet](https://socket.io/docs/v4/emit-cheatsheet/)
+#### Promise Based - (https://socket.io/docs/v4/tutorial/api-overview#with-a-promise)
 
 ### Initial Connection
 
