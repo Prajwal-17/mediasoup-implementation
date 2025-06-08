@@ -20,7 +20,7 @@ io.on("connection", (socket) => {
   console.log("User connected to socket server");
 
   // send router rtpCapabilites to client for further negotiation
-  // RTP capabilities,define what mediasoup or a consumer endpoint can receive (e.g video codecs info)
+  // RTP capabilities,define what mediasoup or a consumer endpoint can receive (e.g video codecs info, headers, fecMechanisms, rtcpFeedback)
   socket.on("getRtpCapabilites", (callback) => {
     callback(mediasoupState.router?.rtpCapabilities);
   });
