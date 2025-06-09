@@ -32,6 +32,7 @@ io.on("connection", (socket) => {
         {
           ip: "0.0.0.0", // this is the localip that mediasoup is runnning (onserver) -> localip(sameNetwork)
           // announcedIp: "192.168.38.232", // this is the public ip that is sent to clients to connect back to server -> publicip
+          // no need to announce the ip in development environment | in production add your machine(ec2) ip address
         },
         {
           ip: "127.0.0.1", // localhost (ipv4)
